@@ -5,3 +5,5 @@ Notes_TF
 datasets
 *.pyc
 build
+.idea
+.ipynb_checkpoints
