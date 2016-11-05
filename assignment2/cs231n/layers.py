@@ -190,11 +190,12 @@ def batchnorm_backward(dout, cache):
   dgamma = np.sum(dout * xhat, axis=0)
   # wrt x
   dxhat = dout * gamma
-  dvar = -np.sum(dxhat * xhat1, axis=0) / (std**2)
+  dvar = -np.sum(dxhat * xhat1 / (std**2), axis=0)
   dvar2 = dvar /2./std
   #dmub = - np.sum(dxhat / std, axis=0) - 2 * dvar * np.mean(xhat1, axis=0)
   #dmub = - np.sum(dxhat / std + 2 * dvar * xhat1, axis=0)
-  dmub = - np.sum(dxhat / std, axis=0)  
+  dmub = - np.sum(dxhat / std + 2 * dvar2 * xhat1/N, axis=0)  
+  #dmub = - np.sum(dxhat / std, axis=0)  
   dx = dxhat/std + 2 * dvar2 * xhat1 / N + dmub / N
 
   return dx, dgamma, dbeta  # dx not correct!!

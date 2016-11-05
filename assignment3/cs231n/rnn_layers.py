@@ -26,6 +26,7 @@ def rnn_step_forward(x, prev_h, Wx, Wh, b):
   - next_h: Next hidden state, of shape (N, H)
   - cache: Tuple of values needed for the backward pass.
   """
+  # Ht = Wx X + Wh Ht-1 + b
   next_h = np.tanh(x.dot(Wx) + prev_h.dot(Wh) + b)
   cache = (x, prev_h, Wx, Wh, next_h)
   return next_h, cache
@@ -75,18 +76,17 @@ def rnn_forward(x, h0, Wx, Wh, b):
   - h: Hidden states for the entire timeseries, of shape (N, T, H).
   - cache: Values needed in the backward pass
   """
-  h, cache = None, None
   N, T, D = x.shape
   H = h0.shape[1]
   h = np.zeros((N,T, H))
 
-  for t in range(0, T):
+  for t in xrange(0, T):
     if t==0:
       h[:, 0, :], _ = rnn_step_forward(x[:, 0, :], h0, Wx, Wh, b)  # h0
     else:
       h[:, t, :], _ = rnn_step_forward(x[:, t, :], h[:, t-1, :], Wx, Wh, b)
 
-  cache = (x, h, Wx, Wh)
+  cache = (x, h0, h, Wx, Wh)
   return h, cache
 
 
@@ -104,21 +104,31 @@ def rnn_backward(dh, cache):
   - dWh: Gradient of hidden-to-hidden weights, of shape (H, H)
   - db: Gradient of biases, of shape (H,)
   """
-  dx, dh0, dWx, dWh, db = None, None, None, None, None
-  x, h, Wx, Wh  = cache
+  # Ht = Wx X + Wh Ht-1 + b
+  # dHt/dx = Wx, dHt/dWx = X, dHt/dWh = Ht-1, dHt/db = 1
+  # dHt/dHt-1 = Wh
+  x, h0, h, Wx, Wh  = cache
   N, T, D = x.shape
   H = h.shape[2]
   dx = np.zeros((N, T, D))
+  dhprev = np.zeros((N, H))
+  dWx = np.zeros((D, H))
+  dWh = np.zeros((H, H))
+  db = np.zeros((H,))
 
-  for t in range(T-1, -1, -1): # t-1 .. 0
+  for t in xrange(T-1, -1, -1): # t-1 .. 0
     if t==0:
-
+      cache_t = (x[:, t, :], h0, Wx, Wh, h[:, t, :])
     else:
       cache_t = (x[:, t, :], h[:, t-1, :], Wx, Wh, h[:, t, :])
-      dx[:, t, :], dprev_h, dWx, dWh, db = rnn_step_backward(dh[:, t, :], cache_t)
+    # h has 2 connections: one out and one to next timestep, hence the sum
+    dx[:, t, :], dhprev, dWxt, dWht, dbt = rnn_step_backward(dh[:, t, :] + dhprev, cache_t)
+    # Wx, Wh and b the same for all t, so add up
+    dWx += dWxt
+    dWh += dWht
+    db += dbt
 
-
-  return dx, dh0, dWx, dWh, db
+  return dx, dhprev, dWx, dWh, db
 
 
 def word_embedding_forward(x, W):
@@ -136,16 +146,10 @@ def word_embedding_forward(x, W):
   - out: Array of shape (N, T, D) giving word vectors for all input words.
   - cache: Values needed for the backward pass
   """
-  out, cache = None, None
-  ##############################################################################
-  # TODO: Implement the forward pass for word embeddings.                      #
-  #                                                                            #
-  # HINT: This should be very simple.                                          #
-  ##############################################################################
-  pass
-  ##############################################################################
-  #                               END OF YOUR CODE                             #
-  ##############################################################################
+  N, T = x.shape
+  V, D = W.shape
+  out = W[x.ravel()].reshape((N, T, D))
+  cache = (x, W)
   return out, cache
 
 
@@ -164,16 +168,14 @@ def word_embedding_backward(dout, cache):
   Returns:
   - dW: Gradient of word embedding matrix, of shape (V, D).
   """
-  dW = None
-  ##############################################################################
-  # TODO: Implement the backward pass for word embeddings.                     #
-  #                                                                            #
-  # HINT: Look up the function np.add.at                                       #
-  ##############################################################################
-  pass
-  ##############################################################################
-  #                               END OF YOUR CODE                             #
-  ##############################################################################
+  x, W = cache
+  N, T = x.shape
+  V, D = W.shape
+  dW = np.zeros((V,D))
+  for n in xrange(N):
+    for t in xrange(T):
+      dW[x[n,t], :] += dout[n,t, :]
+  #np.add.at(dW, x, dout)
   return dW
 
 
