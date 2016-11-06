@@ -213,16 +213,22 @@ def lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b):
   - next_c: Next cell state, of shape (N, H)
   - cache: Tuple of values needed for backward pass.
   """
-  next_h, next_c, cache = None, None, None
-  #############################################################################
-  # TODO: Implement the forward pass for a single timestep of an LSTM.        #
-  # You may want to use the numerically stable sigmoid implementation above.  #
-  #############################################################################
-  pass
-  ##############################################################################
-  #                               END OF YOUR CODE                             #
-  ##############################################################################
-  
+  H = prev_h.shape[1]
+
+  # gate input
+  a = x.dot(Wx) + prev_h.dot(Wh) + b  # N, 4H
+
+  # gate activations
+  i = sigmoid(a[:, :H])  # N, H
+  f = sigmoid(a[:, H:2*H])  # N, H
+  o = sigmoid(a[:, 2*H:3*H])  # N, H
+  g = np.tanh(a[:, 3*H:])  # N, H
+
+  next_c = f * prev_c + i * g  # ct = f * ct-1 + i * g, N, H
+  next_h = o * np.tanh(next_c)  # ht = o * tanh(ct)
+
+  cache = (x, i, f, o, g, prev_c, next_c, prev_h, next_h, Wx, Wh)
+
   return next_h, next_c, cache
 
 
@@ -243,17 +249,77 @@ def lstm_step_backward(dnext_h, dnext_c, cache):
   - dWh: Gradient of hidden-to-hidden weights, of shape (H, 4H)
   - db: Gradient of biases, of shape (4H,)
   """
-  dx, dh, dc, dWx, dWh, db = None, None, None, None, None, None
-  #############################################################################
-  # TODO: Implement the backward pass for a single timestep of an LSTM.       #
-  #                                                                           #
-  # HINT: For sigmoid and tanh you can compute local derivatives in terms of  #
-  # the output value from the nonlinearity.                                   #
-  #############################################################################
-  pass
-  ##############################################################################
-  #                               END OF YOUR CODE                             #
-  ##############################################################################
+  x, i, f, o, g, prev_c, next_c, prev_h, next_h, Wx, Wh = cache
+
+  N, H = dnext_c.shape
+  # dadxi = Wx[:, :H]  # D, H
+  # dadxf = Wx[:, H:2*H]  # D, H
+  # dadxo = Wx[:, 2*H:3*H]  # D, H
+  # dadxg = Wx[:, 3*H:]  # D, H
+  #
+  # dadprev_hi = Wh[:, :H]  # H, H
+  # dadprev_hf = Wh[:, H:2*H]  # H, H
+  # dadprev_ho = Wh[:, 2*H:3*H]  # H, H
+  # dadprev_hg = Wh[:, 3*H:]  # H, H
+  #
+  # dadWh = prev_h  # N, H
+  # dadWx = x  # N, D
+  # dadb = 1
+
+  # derivative of the gates wrt the corresponding a's
+  doda = o * (1-o)  # N, H
+  dfda = f * (1-f)
+  dida = i * (1-i)
+  dgda = 1-g**2
+
+  dnext_h_tmp = np.zeros((N, 4*H))
+  dtanh = 1 - np.tanh(next_c)**2
+  # i
+  dnext_h_tmp[:, :H] += (dnext_h * o * dtanh + dnext_c) * dida * g
+  # f
+  dnext_h_tmp[:, H:2*H] += (dnext_h * o * dtanh  + dnext_c) * dfda * prev_c
+  # o
+  dnext_h_tmp[:, 2*H:3 * H] += dnext_h * doda * np.tanh(next_c)
+  # g
+  dnext_h_tmp[:, 3*H:] += (dnext_h * o * dtanh + dnext_c) * i * dgda
+
+  # dL/dprevh
+  dprev_h = dnext_h_tmp.dot(Wh.T)  # (N, 4H) * (4H, H) = N, H
+
+  # dL/dprevh = dL/dnexth * dnexth/ da * da/dprevh +
+  #             dL/dnextc * dnextc/ dnexth * dnexth/ da * da/dprevh
+  # nexth = o * tanh(ct)
+  # dprev_h breakdown
+  #dprev_h = (dnext_h * doda * np.tanh(next_c)).dot(dadprev_ho.T)  # N, H
+  #dprev_h += (dnext_h * o * tmp * dfda * prev_c).dot(dadprev_hf.T)
+  #dprev_h += (dnext_h * o * tmp * dida * g).dot(dadprev_hi.T)
+  #dprev_h += (dnext_h * o * tmp * i * dgda).dot(dadprev_hg.T)
+  # contrib from dnext_c
+  #dprev_h += (dnext_c * dfda * prev_c).dot(dadprev_hf.T)
+  #dprev_h += (dnext_c * dida * g).dot(dadprev_hi.T)
+  #dprev_h += (dnext_c * i * dgda).dot(dadprev_hg.T)
+
+  # dL/dprevc = dL/dnextc * dnextc/ dnexth * dnexth/dprevc + (..)
+  # = dL/dnextc * dnextc/ dnexth * dnexth/dnextc * dnextc/dprevc + (..)
+  # = dL/dnextc * dnextc/dprevc + (..)
+  # = dL/dnextc * dnextc/dprevc + dL/dnexth * dnexth/dprevc
+  # = dL/dnextc * dnextc/dprevc + dL/dnexth * dnexth/dnextc * dnextc/dprevc
+  dprev_c = (dnext_c + dnext_h * o * dtanh) * f  # N, H
+
+  #dL/dx = dL/dnexth * dnexth/da * da/dx +
+  #        dL/dnextc * dnextc/ dnexth * dnexth/ da * da/x
+  dx = dnext_h_tmp.dot(Wx.T)   # (N, 4H) * (4H, D) = N, D
+
+  #dL/dWx = dL/dnexth * dnexth/da * da/dWx +
+  #        dL/dnextc * dnextc/ dnexth * dnexth/ da * da/Wx
+  dWx = (x.T).dot(dnext_h_tmp)   # (D, N) * (N, 4H) = D, 4H
+
+  #dL/dWh = dL/dnexth * dnexth/da * da/dWh +
+  #        dL/dnextc * dnextc/ dnexth * dnexth/ da * da/Wh
+  dWh = (prev_h.T).dot(dnext_h_tmp)   # (H, N) * (N, 4H) = H, 4H
+
+  # dL/db
+  db = np.sum(dnext_h_tmp, axis=0)
 
   return dx, dprev_h, dprev_c, dWx, dWh, db
 
