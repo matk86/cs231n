@@ -346,15 +346,20 @@ def lstm_forward(x, h0, Wx, Wh, b):
   - h: Hidden states for all timesteps of all sequences, of shape (N, T, H)
   - cache: Values needed for the backward pass.
   """
-  h, cache = None, None
-  #############################################################################
-  # TODO: Implement the forward pass for an LSTM over an entire timeseries.   #
-  # You should use the lstm_step_forward function that you just defined.      #
-  #############################################################################
-  pass
-  ##############################################################################
-  #                               END OF YOUR CODE                             #
-  ##############################################################################
+  N, T, D = x.shape
+  H = h0.shape[1]
+  h = np.zeros((N, T, H))
+  c = np.zeros((N, T, H))
+  cache_list = []
+
+  for t in xrange(0, T):
+    if t == 0:
+      h[:, 0, :], c[:, 0, :], cachet = lstm_step_forward(x[:, 0, :], h0, c[:, 0, :], Wx, Wh, b)  # h0
+    else:
+      h[:, t, :], c[:, t, :], cachet = lstm_step_forward(x[:, t, :], h[:, t - 1, :], c[:, t - 1, :], Wx, Wh, b)
+    cache_list.append(cachet)
+
+  cache = (x, h0, h, c, Wx, Wh, cache_list)
 
   return h, cache
 
@@ -375,16 +380,30 @@ def lstm_backward(dh, cache):
   - db: Gradient of biases, of shape (4H,)
   """
   dx, dh0, dWx, dWh, db = None, None, None, None, None
-  #############################################################################
-  # TODO: Implement the backward pass for an LSTM over an entire timeseries.  #
-  # You should use the lstm_step_backward function that you just defined.     #
-  #############################################################################
-  pass
-  ##############################################################################
-  #                               END OF YOUR CODE                             #
-  ##############################################################################
-  
-  return dx, dh0, dWx, dWh, db
+  x, h0, h, c, Wx, Wh, cache_list  = cache
+  N, T, D = x.shape
+  H = h.shape[2]
+  dx = np.zeros((N, T, D))
+  dhprev = np.zeros((N, H))
+  dprevc = np.zeros((N, H))
+  dWx = np.zeros((D, 4*H))
+  dWh = np.zeros((H, 4*H))
+  db = np.zeros((4*H,))
+
+  for t in xrange(T-1, -1, -1): # t-1 .. 0
+    _, i, f, o, g, _, _, _, _, _, _ = cache_list[t]
+    if t==0:
+      cache_t = (x[:, t, :], i, f, o, g, 0, c[:, t, :], h0, h[:, t, :], Wx, Wh)
+    else:
+      cache_t = (x[:, t, :], i, f, o, g, c[:, t-1, :], c[:, t, :], h[:, t-1, :], h[:, t, :], Wx, Wh)
+    # h has 2 connections: one out and one to next timestep, hence the sum
+    dx[:, t, :], dhprev, dprevc, dWxt, dWht, dbt = lstm_step_backward(dh[:, t, :] + dhprev, dprevc, cache_t)
+    # Wx, Wh and b the same for all t, so add up
+    dWx += dWxt
+    dWh += dWht
+    db += dbt
+
+  return dx, dhprev, dWx, dWh, db
 
 
 def temporal_affine_forward(x, w, b):

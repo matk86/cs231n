@@ -122,6 +122,10 @@ class CaptioningRNN(object):
     # rnn
     if self.cell_type == "rnn":
       h, h_cache = rnn_forward(captions_affine, image_affine, Wx, Wh, b)  # N, T-1, H
+    elif self.cell_type == "lstm":
+      h, h_cache = lstm_forward(captions_affine, image_affine, Wx, Wh, b)
+    else:
+      raise NotImplementedError
 
     # scores
     scores, s_cache = temporal_affine_forward(h, W_vocab, b_vocab)  # N, T-1, V
@@ -132,7 +136,13 @@ class CaptioningRNN(object):
 
     # BACK PROP
     dout_rnn, grads["W_vocab"], grads["b_vocab"] = temporal_affine_backward(dLdscores, s_cache)
-    dx_rnn, dh0, grads["Wx"], grads["Wh"], grads["b"] = rnn_backward(dout_rnn, h_cache)
+    if self.cell_type == "rnn":
+      dx_rnn, dh0, grads["Wx"], grads["Wh"], grads["b"] = rnn_backward(dout_rnn, h_cache)
+    elif self.cell_type == "lstm":
+      dx_rnn, dh0, grads["Wx"], grads["Wh"], grads["b"] = lstm_backward(dout_rnn, h_cache)
+    else:
+      raise NotImplementedError
+
     # image backprop
     dx_i, grads["W_proj"], grads["b_proj"] = affine_backward(dh0, i_cache)
     # word embed backprop
@@ -198,13 +208,20 @@ class CaptioningRNN(object):
 
     for n in xrange(N):
       h, _ = affine_forward(features[n, :].reshape(1, features.shape[1]), W_proj, b_proj)  # 1, H
+      if self.cell_type == "lstm":
+        c = 0
       word_t = self._start
 
       for t in xrange(max_length):
         captions[n, t] = word_t
         x = W_embed[word_t].reshape(1, W_embed.shape[1])  # 1, W
-        h, _ = rnn_step_forward(x, h, Wx, Wh, b)  # 1, H
-        score = next_h.dot(W_vocab) + b_vocab.reshape((1, b_vocab.shape[0]))  # 1, V
+        if self.cell_type == "rnn":
+          h, _ = rnn_step_forward(x, h, Wx, Wh, b)  # 1, H
+        elif self.cell_type == "lstm":
+          h, c, _ = lstm_step_forward(x, h, c, Wx, Wh, b)  # 1, H
+        else:
+          raise NotImplementedError
+        score = h.dot(W_vocab) + b_vocab.reshape((1, b_vocab.shape[0]))  # 1, V
         word_t = np.argmax(score)
     ###########################################################################
     #  You will need to
