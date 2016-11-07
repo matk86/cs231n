@@ -148,6 +148,7 @@ class FullyConnectedNet(object):
     for l in range(1, self.num_layers-1):
       self.params["W"+str(int(l+1))] = weight_scale * np.random.randn(hidden_dims[l-1], hidden_dims[l])
       self.params["b"+str(int(l+1))] = np.zeros(hidden_dims[l])
+            
 
     # last layer
     self.params["W"+str(int(self.num_layers))] = weight_scale * np.random.randn(hidden_dims[-1], num_classes)
@@ -175,7 +176,10 @@ class FullyConnectedNet(object):
     self.bn_params = []
     if self.use_batchnorm:
       self.bn_params = [{'mode': 'train'} for i in xrange(self.num_layers - 1)]
-    
+      for l in range(0, self.num_layers-1):      
+        self.params["gamma"+str(int(l+1))] = np.ones(hidden_dims[l])
+        self.params["beta"+str(int(l+1))] = np.zeros(hidden_dims[l])    
+
     # Cast all parameters to the correct datatype
     for k, v in self.params.iteritems():
       self.params[k] = v.astype(dtype)
@@ -193,12 +197,23 @@ class FullyConnectedNet(object):
     # Set train/test mode for batchnorm params and dropout param since they
     # behave differently during training and testing.
     cache_dropout = None
+    cache_bn = None
+
+    # dropout
     if self.dropout_param is not None:
       self.dropout_param['mode'] = mode
       cache_dropout = []
+
+    # BN
     if self.use_batchnorm:
+      gamma = []
+      beta = []
       for bn_param in self.bn_params:
         bn_param[mode] = mode
+      for l in range(self.num_layers-1):      
+        gamma.append(self.params["gamma"+str(int(l+1))])
+        beta.append(self.params["beta"+str(int(l+1))])            
+      cache_bn = []        
 
     W = []
     b = []
@@ -210,6 +225,9 @@ class FullyConnectedNet(object):
 
     # input layer
     out1, cache1 = affine_forward(X, W[0], b[0])
+    if self.use_batchnorm:
+        out1, cbn = batchnorm_forward(out1, gamma[0], beta[0], self.bn_params[0])
+        cache_bn.append(cbn)      
     out2, _ = relu_forward(out1)
     if self.use_dropout:
       out2, cd = dropout_forward(out2, self.dropout_param)
@@ -217,9 +235,15 @@ class FullyConnectedNet(object):
     out2_list.extend([out2])
     cache.extend([cache1])
 
+    i = 0
     # hidden layers
     for Wi, bi in zip(W[1:-1], b[1:-1]):
       out1, cache1 = affine_forward(out2, Wi, bi)
+      if self.use_batchnorm:
+        gammai, betai, bnp =  gamma[i+1], beta[i+1], self.bn_params[i+1]
+        out1, cbn = batchnorm_forward(out1, gammai, betai, bnp)
+        cache_bn.append(cbn)
+        i += 1
       out2, _ = relu_forward(out1)
       if self.use_dropout:
         out2, cd = dropout_forward(out2, self.dropout_param)
@@ -250,10 +274,15 @@ class FullyConnectedNet(object):
     grads["W"+str(int(self.num_layers))] = dw2
     grads["b"+str(int(self.num_layers))] = db2
 
+    
     for i in range(self.num_layers-1, 0, -1):
       if self.use_dropout:
         dx2 = dropout_backward(dx2, cache_dropout[i-1])
       dx2 = relu_backward(dx2.reshape(out2_list[i-1].shape), out2_list[i-1])
+      if self.use_batchnorm:
+        dx2, dgamma, dbeta = batchnorm_backward(dx2, cache_bn[i-1])
+        grads["gamma" + str(int(i))] = dgamma
+        grads["beta" + str(int(i))] = dbeta
       dx2, dw1, db1 = affine_backward(dx2, cache[i-1])
       grads["W" + str(int(i))] = dw1
       grads["b" + str(int(i))] = db1

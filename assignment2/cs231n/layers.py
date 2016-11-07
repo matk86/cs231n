@@ -132,33 +132,36 @@ def batchnorm_forward(x, gamma, beta, bn_param):
   momentum = bn_param.get('momentum', 0.9)
 
   N, D = x.shape
-  x_orig = x.copy()
   running_mean = bn_param.get('running_mean', np.zeros(D, dtype=x.dtype))
   running_var = bn_param.get('running_var', np.zeros(D, dtype=x.dtype))
 
   sample_mean = np.mean(x, axis=0)
   sample_var = np.var(x, axis=0)
+  sample_std = np.sqrt(sample_var + eps)
 
   running_mean = momentum * running_mean + (1 - momentum) * sample_mean
   running_var = momentum * running_var + (1 - momentum) * sample_var
+  running_std = np.sqrt(running_var + eps)
+  
   if mode == 'train':
-    x1 = x - sample_mean
-    x1 /= np.sqrt(sample_var + eps)
-    out = gamma * x1 + beta    
+    mean = sample_mean
+    std = sample_std
   elif mode == 'test':
-    x2 = x - running_mean
-    x2 /= np.sqrt(running_var + eps)
-    out = gamma * x2 + beta    
+    mean = running_mean
+    std = running_std
   else:
     raise ValueError('Invalid forward batchnorm mode "%s"' % mode)
 
-  #out = gamma * x + beta
+  xmean = x - mean
+  xhat = xmean / std
+  
+  out = gamma * xhat + beta
 
   # Store the updated running means back into bn_param
   bn_param['running_mean'] = running_mean
   bn_param['running_var'] = running_var
 
-  cache = (x_orig, sample_mean, sample_var, eps, gamma, beta)
+  cache = (xmean, xhat, mean, std, gamma, beta, bn_param)
 
   return out, cache
 
@@ -180,20 +183,22 @@ def batchnorm_backward(dout, cache):
   - dgamma: Gradient with respect to scale parameter gamma, of shape (D,)
   - dbeta: Gradient with respect to shift parameter beta, of shape (D,)
   """
-  x, sample_mean, sample_var, eps, gamma, beta = cache
-  std = np.sqrt(sample_var + eps)
-  xhat1  = x - sample_mean
-  xhat = xhat1 / std
-  N, _ = dout.shape
+  xmean, xhat, sample_mean, sample_std, gamma, beta, bn_param = cache
+  N = dout.shape[0]
   # wrt beta
   dbeta = np.sum(dout, axis=0)
   # wrt gamma
   dgamma = np.sum(dout * xhat, axis=0)
-  # wrt x
+  # wrt xhat
   dxhat = dout * gamma
-  dvar = -np.sum(dxhat * xhat1 / (std**3), axis=0) / 2.
-  dmub = -np.sum(dxhat / std + 2 * dvar * xhat1/N, axis=0)  
-  dx = dxhat/std + 2 * dvar * xhat1 / N + dmub / N
+  if bn_param["mode"] == 'train':  
+    # wrt variance
+    dvar = -np.sum(dxhat * xmean / (sample_std**3), axis=0) / 2.
+    # wrt x
+    dx = dxhat/sample_std + 2*dvar*xmean / N
+    dx -=  np.mean(dx, axis=0)
+  elif bn_param["mode"] == 'test':
+    dx = dxhat / sample_std
 
   return dx, dgamma, dbeta
 
