@@ -270,25 +270,28 @@ def lstm_step_backward(dnext_h, dnext_c, cache):
   doda = o * (1-o)  # N, H
   dfda = f * (1-f)
   dida = i * (1-i)
-  dgda = 1-g**2
+  dgda = 1 - g**2
 
-  dnext_h_tmp = np.zeros((N, 4*H))
+  dLda = np.zeros((N, 4*H))
+  # tanh derivative
   dtanh = 1 - np.tanh(next_c)**2
+  common = dnext_h * o * dtanh + dnext_c
   # i
-  dnext_h_tmp[:, :H] += (dnext_h * o * dtanh + dnext_c) * dida * g
+  dLda[:, :H] += common * dida * g
   # f
-  dnext_h_tmp[:, H:2*H] += (dnext_h * o * dtanh  + dnext_c) * dfda * prev_c
+  dLda[:, H:2*H] += common * dfda * prev_c
   # o
-  dnext_h_tmp[:, 2*H:3 * H] += dnext_h * doda * np.tanh(next_c)
+  dLda[:, 2*H:3 * H] += dnext_h * doda * np.tanh(next_c)
   # g
-  dnext_h_tmp[:, 3*H:] += (dnext_h * o * dtanh + dnext_c) * i * dgda
+  dLda[:, 3*H:] += common * i * dgda
 
   # dL/dprevh
-  dprev_h = dnext_h_tmp.dot(Wh.T)  # (N, 4H) * (4H, H) = N, H
+  dprev_h = dLda.dot(Wh.T)  # (N, 4H) * (4H, H) = N, H
 
   # dL/dprevh = dL/dnexth * dnexth/ da * da/dprevh +
   #             dL/dnextc * dnextc/ dnexth * dnexth/ da * da/dprevh
   # nexth = o * tanh(ct)
+  # tmp  = 1 - np.tanh(next_c)**2
   # dprev_h breakdown
   #dprev_h = (dnext_h * doda * np.tanh(next_c)).dot(dadprev_ho.T)  # N, H
   #dprev_h += (dnext_h * o * tmp * dfda * prev_c).dot(dadprev_hf.T)
@@ -308,18 +311,18 @@ def lstm_step_backward(dnext_h, dnext_c, cache):
 
   #dL/dx = dL/dnexth * dnexth/da * da/dx +
   #        dL/dnextc * dnextc/ dnexth * dnexth/ da * da/x
-  dx = dnext_h_tmp.dot(Wx.T)   # (N, 4H) * (4H, D) = N, D
+  dx = dLda.dot(Wx.T)   # (N, 4H) * (4H, D) = N, D
 
   #dL/dWx = dL/dnexth * dnexth/da * da/dWx +
   #        dL/dnextc * dnextc/ dnexth * dnexth/ da * da/Wx
-  dWx = (x.T).dot(dnext_h_tmp)   # (D, N) * (N, 4H) = D, 4H
+  dWx = (x.T).dot(dLda)   # (D, N) * (N, 4H) = D, 4H
 
   #dL/dWh = dL/dnexth * dnexth/da * da/dWh +
   #        dL/dnextc * dnextc/ dnexth * dnexth/ da * da/Wh
-  dWh = (prev_h.T).dot(dnext_h_tmp)   # (H, N) * (N, 4H) = H, 4H
+  dWh = (prev_h.T).dot(dLda)   # (H, N) * (N, 4H) = H, 4H
 
   # dL/db
-  db = np.sum(dnext_h_tmp, axis=0)
+  db = np.sum(dLda, axis=0)
 
   return dx, dprev_h, dprev_c, dWx, dWh, db
 
