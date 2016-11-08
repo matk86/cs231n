@@ -125,15 +125,15 @@ class KNearestNeighbor(object):
       closest_y = self.y_train[args]
       y_pred[i] = Counter(closest_y).most_common()[0][0]
     return y_pred
-      # TODO:                                                                 #
-      # Use the distance matrix to find the k nearest neighbors of the ith    #
-      # testing point, and use self.y_train to find the labels of these       #
-      # neighbors. Store these labels in closest_y.                           #
-      # Hint: Look up the function numpy.argsort.                             #
-      # TODO:                                                                 #
-      # Now that you have found the labels of the k nearest neighbors, you    #
-      # need to find the most common label in the list closest_y of labels.   #
-      # Store this label in y_pred[i]. Break ties by choosing the smaller     #
-      # label.                                                                #
-      #########################################################################
+
+  # Use the distance matrix to find the k nearest neighbors of the ith    #
+  # testing point, and use self.y_train to find the labels of these       #
+  # neighbors. Store these labels in closest_y.                           #
+  # Hint: Look up the function numpy.argsort.                             #
+
+  # Now that you have found the labels of the k nearest neighbors, you    #
+  # need to find the most common label in the list closest_y of labels.   #
+  # Store this label in y_pred[i]. Break ties by choosing the smaller     #
+  # label.                                                                #
+
 

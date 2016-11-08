@@ -506,11 +506,11 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
   running_mean = momentum * running_mean + (1 - momentum) * sample_mean
   running_var = momentum * running_var + (1 - momentum) * sample_var
   if mode == 'train':
-    x -= sample_mean[np.newaxis, :, np.newaxis, np.newaxis]
-    x /= np.sqrt(sample_var[np.newaxis, :, np.newaxis, np.newaxis] + eps)
+    xhat = x - sample_mean[np.newaxis, :, np.newaxis, np.newaxis]
+    xhat /= np.sqrt(sample_var[np.newaxis, :, np.newaxis, np.newaxis] + eps)
   elif mode == 'test':
-    x -= running_mean[np.newaxis, :, np.newaxis, np.newaxis]
-    x /= np.sqrt(running_var[np.newaxis, :, np.newaxis, np.newaxis] + eps)
+    xhat = x - running_mean[np.newaxis, :, np.newaxis, np.newaxis]
+    xhat /= np.sqrt(running_var[np.newaxis, :, np.newaxis, np.newaxis] + eps)
   else:
     raise ValueError('Invalid forward batchnorm mode "%s"' % mode)
 
@@ -548,9 +548,6 @@ def spatial_batchnorm_backward(dout, cache):
   # be very short; ours is less than five lines.                              #
   #############################################################################
   pass
-  #############################################################################
-  #                             END OF YOUR CODE                              #
-  #############################################################################
 
   return dx, dgamma, dbeta
 
